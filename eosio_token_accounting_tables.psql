@@ -1,0 +1,37 @@
+use eosio_token_accounting;
+
+CREATE TABLE %%_BALANCES
+ (
+ account_name      VARCHAR(13) NOT NULL,
+ contract          VARCHAR(13) NOT NULL,
+ currency          VARCHAR(8) NOT NULL,
+ balance           DECIMAL(40,20) UNSIGNED NOT NULL,
+ block_num         BIGINT NOT NULL,
+ block_time        DATETIME NOT NULL,
+ trx_id            VARCHAR(64) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE UNIQUE INDEX %%_BALANCES_I01 ON %%_BALANCES (account_name, contract, currency);
+
+
+CREATE TABLE %%_TRANSFERS
+(
+ seq            BIGINT UNSIGNED NOT NULL,
+ block_num      BIGINT NOT NULL,
+ block_time     DATETIME NOT NULL,
+ trx_id         VARCHAR(64) NOT NULL,
+ contract       VARCHAR(13) NOT NULL,
+ currency       VARCHAR(8) NOT NULL,
+ account_name   VARCHAR(13) NOT NULL,
+ delta          DECIMAL(40,20) NOT NULL,
+ balance        DECIMAL(40,20) UNSIGNED NOT NULL,
+ other_party    VARCHAR(13) NULL,
+ memo           TEXT
+)  ENGINE=InnoDB;
+
+CREATE UNIQUE INDEX %%_TRANSFERS_I01 ON %%_TRANSFERS (seq, account_name);
+CREATE INDEX %%_TRANSFERS_I02 ON %%_TRANSFERS (account_name, block_time, seq);
+CREATE INDEX %%_TRANSFERS_I03 ON %%_TRANSFERS (account_name, contract, currency, block_time, seq);
+CREATE INDEX %%_TRANSFERS_I04 ON %%_TRANSFERS (trx_id(8));
+
+
