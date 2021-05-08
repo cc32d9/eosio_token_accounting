@@ -61,6 +61,11 @@ my $dbh = DBI->connect($dsn, $db_user, $db_password,
                         mariadb_server_prepare => 1});
 die($DBI::errstr) unless $dbh;
 
+
+my $sth_add_currency = $dbh->prepare
+    ('INSERT IGNORE INTO ' . $network . '_CURRENCIES (contract, currency, decimals, multiplier) ' .
+     'VALUES(?,?,?,?)');
+     
 my $sth_add_bal = $dbh->prepare
     ('INSERT INTO ' . $network . '_BALANCES ' .
      '(account_name, contract, currency, balance, block_num, block_time, trx_id) ' .
@@ -98,6 +103,17 @@ my $uncommitted_block = 0;
     }
 }
 
+
+my %known_currency;
+{
+    my $sth = $dbh->prepare ('SELECT contract, currency FROM ' . $network . '_CURRENCIES');
+    $sth->execute();
+    while( my $r = $sth->fetchrow_arrayref() )
+    {
+        $known_currency{$r->[0]}{$r->[1]} = 1;
+    }
+}
+    
 
 
 my $json = JSON->new;
@@ -259,14 +275,30 @@ sub process_atrace
             if( defined($amount) and defined($currency) and
                 $amount =~ /^[0-9.]+$/ and $currency =~ /^[A-Z]{1,7}$/ )
             {
+                if( not $known_currency{$contract}{$currency} )
+                {
+                    my $decimals = 0;
+                    my $pos = index($amount, '.');
+                    if( $pos > -1 )
+                    {
+                        $decimals = length($amount) - $pos - 1;
+                    }
+                    my $multiplier = 10**$decimals;
+
+                    $sth_add_currency->execute($contract, $currency, $decimals, $multiplier);
+                    $known_currency{$contract}{$currency} = 1;
+                }
+                
                 my $seq = $receipt->{'global_sequence'};
                 my $to = $data->{'to'};
                 my $from = $data->{'from'};
                 my $block_num = $tx->{'block_num'};
                 my $block_time = $tx->{'block_time'};
                 my $trx_id = $tx->{'trx_id'};
-                my $debit = '-' . $amount;
 
+                $amount =~ s/\.//;
+                my $debit = '-' . $amount;
+                                                 
                 # book for recipient
                 $sth_add_bal->execute($to, $contract, $currency,
                                          $amount, $block_num, $block_time, $trx_id,
