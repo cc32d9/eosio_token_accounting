@@ -84,6 +84,12 @@ my $sth_add_xfer = $dbh->prepare
      ' (SELECT balance FROM ' . $network . '_BALANCES WHERE account_name=? AND contract=? AND currency=?), ?, ?)');
 
 
+my $sth_add_failure = $dbh->prepare
+    ('INSERT INTO ' . $network . '_FAILED_DECODING ' .
+     '(seq, block_num, block_time, trx_id, contract) ' .
+     'VALUES(?,?,?,?,?)');
+
+
 my $sth_upd_sync = $dbh->prepare
     ('INSERT INTO SYNC (network, block_num) VALUES(?,?) ' .
      'ON DUPLICATE KEY UPDATE block_num=?');
@@ -265,7 +271,16 @@ sub process_atrace
 
         my $aname = $act->{'name'};
         my $data = $act->{'data'};
-        return unless ( ref($data) eq 'HASH' );
+
+        if( ref($data) ne 'HASH' )
+        {
+            if( $contract ne 'eosio.null' )
+            {
+                $sth_add_failure->execute($receipt->{'global_sequence'}, $tx->{'block_num'},
+                                          $tx->{'block_time'}, $tx->{'trx_id'}, $contract);
+            }
+            return;
+        }
 
         if( ($aname eq 'transfer' or $aname eq 'issue') and
             defined($data->{'quantity'}) and

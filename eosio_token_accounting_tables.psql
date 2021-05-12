@@ -17,7 +17,7 @@ CREATE TABLE %%_BALANCES
  account_name      VARCHAR(13) NOT NULL,
  contract          VARCHAR(13) NOT NULL,
  currency          VARCHAR(8) NOT NULL,
- balance           BIGINT UNSIGNED NOT NULL,
+ balance           BIGINT NOT NULL,
  block_num         BIGINT NOT NULL,
  block_time        DATETIME NOT NULL,
  trx_id            VARCHAR(64) NOT NULL
@@ -36,9 +36,9 @@ CREATE TABLE %%_TRANSFERS
  currency       VARCHAR(8) NOT NULL,
  account_name   VARCHAR(13) NOT NULL,
  delta          BIGINT NOT NULL,
- balance        BIGINT UNSIGNED NOT NULL,
+ balance        BIGINT NOT NULL,
  other_party    VARCHAR(13) NULL,
- memo           TEXT
+ memo           BLOB
 )  ENGINE=InnoDB;
 
 CREATE UNIQUE INDEX %%_TRANSFERS_I01 ON %%_TRANSFERS (seq, account_name);
@@ -47,3 +47,13 @@ CREATE INDEX %%_TRANSFERS_I03 ON %%_TRANSFERS (account_name, contract, currency,
 CREATE INDEX %%_TRANSFERS_I04 ON %%_TRANSFERS (trx_id(8));
 
 
+CREATE TABLE %%_FAILED_DECODING
+ (
+ seq            BIGINT UNSIGNED NOT NULL,
+ block_num      BIGINT NOT NULL,
+ block_time     DATETIME NOT NULL,
+ trx_id         VARCHAR(64) NOT NULL,
+ contract       VARCHAR(13) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE INDEX %%_FAILED_DECODING_I01 ON %%_FAILED_DECODING (contract, seq);
