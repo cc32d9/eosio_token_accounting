@@ -17,7 +17,7 @@ CREATE TABLE %%_BALANCES
  account_name      VARCHAR(13) NOT NULL,
  contract          VARCHAR(13) NOT NULL,
  currency          VARCHAR(8) NOT NULL,
- balance           BIGINT NULL,
+ balance           DECIMAL(65,0) NULL,
  block_num         BIGINT NOT NULL,
  block_time        DATETIME NOT NULL,
  trx_id            VARCHAR(64) NOT NULL
@@ -35,8 +35,8 @@ CREATE TABLE %%_TRANSFERS
  contract       VARCHAR(13) NOT NULL,
  currency       VARCHAR(8) NOT NULL,
  account_name   VARCHAR(13) NOT NULL,
- delta          BIGINT NOT NULL,
- balance        BIGINT NULL,
+ delta          DECIMAL(22,0) NOT NULL,
+ balance        DECIMAL(65,0) NULL,
  other_party    VARCHAR(13) NULL,
  memo           BLOB
 )  ENGINE=InnoDB;

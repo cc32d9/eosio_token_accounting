@@ -284,7 +284,8 @@ sub process_atrace
 
         if( ($aname eq 'transfer' or $aname eq 'issue') and
             defined($data->{'quantity'}) and
-            defined($data->{'to'}) )
+            defined($data->{'to'}) and
+            ($aname eq 'issue' or $data->{'to'} ne $data->{'from'}) )
         {
             my ($amount, $currency) = split(/\s+/, $data->{'quantity'});
             if( defined($amount) and defined($currency) and
