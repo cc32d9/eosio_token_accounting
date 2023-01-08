@@ -203,20 +203,6 @@ sub process_data
             }
         }
     }
-    elsif( $msgtype == 1009 ) # CHRONICLE_MSGTYPE_RCVR_PAUSE
-    {
-        if( $uncommitted_block > $committed_block )
-        {
-            if( $uncommitted_block > $stored_block )
-            {
-                $sth_upd_sync->execute($network, $uncommitted_block, $uncommitted_block);
-                $dbh->commit();
-                $stored_block = $uncommitted_block;
-            }
-            $committed_block = $uncommitted_block;
-            return $committed_block;
-        }
-    }
     elsif( $msgtype == 1010 ) # CHRONICLE_MSGTYPE_BLOCK_COMPLETED
     {
         $blocks_counter++;
@@ -267,7 +253,6 @@ sub process_atrace
 
     if( $receipt->{'receiver'} eq $contract )
     {
-        $actions_counter++;
 
         my $aname = $act->{'name'};
         my $data = $act->{'data'};
@@ -284,8 +269,10 @@ sub process_atrace
 
         if( ($aname eq 'transfer' or $aname eq 'issue') and
             defined($data->{'quantity'}) and
-            defined($data->{'to'}) and
-            ($aname eq 'issue' or $data->{'to'} ne $data->{'from'}) )
+            defined($data->{'to'}) and length($data->{'to'}) <= 13 and 
+            ($aname eq 'issue' or (defined($data->{'from'}) and
+                                   $data->{'to'} ne $data->{'from'} and
+                                   length($data->{'from'}) <= 13)) )
         {
             my ($amount, $currency) = split(/\s+/, $data->{'quantity'});
             if( defined($amount) and defined($currency) and
@@ -315,6 +302,8 @@ sub process_atrace
                 $amount =~ s/\.//;
                 my $debit = '-' . $amount;
                                                  
+                $actions_counter++;
+
                 # book for recipient
                 $sth_add_bal->execute($to, $contract, $currency,
                                          $amount, $block_num, $block_time, $trx_id,
