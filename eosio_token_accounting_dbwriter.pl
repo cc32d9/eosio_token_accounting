@@ -65,7 +65,10 @@ die($DBI::errstr) unless $dbh;
 my $sth_add_currency = $dbh->prepare
     ('INSERT IGNORE INTO ' . $network . '_CURRENCIES (contract, currency, decimals, multiplier) ' .
      'VALUES(?,?,?,?)');
-     
+
+my $sth_set_currency_issuer = $dbh->prepare
+    ('UPDATE ' . $network . '_CURRENCIES SET issuer=? WHERE contract=? AND currency=?');
+
 my $sth_add_bal = $dbh->prepare
     ('INSERT INTO ' . $network . '_BALANCES ' .
      '(account_name, contract, currency, balance, block_num, block_time, trx_id) ' .
@@ -111,15 +114,20 @@ my $uncommitted_block = 0;
 
 
 my %known_currency;
+my %known_issuer;
 {
-    my $sth = $dbh->prepare ('SELECT contract, currency FROM ' . $network . '_CURRENCIES');
+    my $sth = $dbh->prepare ('SELECT contract, currency, issuer FROM ' . $network . '_CURRENCIES');
     $sth->execute();
     while( my $r = $sth->fetchrow_arrayref() )
     {
         $known_currency{$r->[0]}{$r->[1]} = 1;
+        if( defined($r->[2]) )
+        {
+            $known_issuer{$r->[0]}{$r->[1]} = $r->[2];
+        }
     }
 }
-    
+
 
 
 my $json = JSON->new;
@@ -191,7 +199,7 @@ sub process_data
             {
                 my $block_time = $data->{'block_timestamp'};
                 $block_time =~ s/T/ /;
-                
+
                 my $tx = { block_num => $data->{'block_num'},
                            block_time => $block_time,
                            trx_id => $trace->{'id'} };
@@ -269,31 +277,21 @@ sub process_atrace
             return;
         }
 
-        if( ($aname eq 'transfer' or $aname eq 'issue') and
-            defined($data->{'quantity'}) and
-            defined($data->{'to'}) and length($data->{'to'}) <= 13 and 
-            ($aname eq 'issue' or (defined($data->{'from'}) and
-                                   $data->{'to'} ne $data->{'from'} and
-                                   length($data->{'from'}) <= 13)) )
+        if( $aname eq 'create' )
         {
-            my ($amount, $currency) = split(/\s+/, $data->{'quantity'});
-            if( defined($amount) and defined($currency) and
-                $amount =~ /^[0-9.]+$/ and $currency =~ /^[A-Z]{1,7}$/ )
-            {
-                if( not $known_currency{$contract}{$currency} )
-                {
-                    my $decimals = 0;
-                    my $pos = index($amount, '.');
-                    if( $pos > -1 )
-                    {
-                        $decimals = length($amount) - $pos - 1;
-                    }
-                    my $multiplier = 10**$decimals;
+            check_currency($contract, $data->{'maximum_supply'}, $data->{'issuer'});
+        }
+        elsif( ($aname eq 'transfer' or $aname eq 'issue') and
+               defined($data->{'quantity'}) and
+               defined($data->{'to'}) and length($data->{'to'}) <= 13 and
+               ($aname eq 'issue' or (defined($data->{'from'}) and
+                                      $data->{'to'} ne $data->{'from'} and
+                                      length($data->{'from'}) <= 13)) )
+        {
+            my $r = check_currency($contract, $data->{'quantity'});
+            if( defined($r) ) {
+                my ($amount, $currency) = @{$r};
 
-                    $sth_add_currency->execute($contract, $currency, $decimals, $multiplier);
-                    $known_currency{$contract}{$currency} = 1;
-                }
-                
                 my $seq = $receipt->{'global_sequence'};
                 my $to = $data->{'to'};
                 my $from = $data->{'from'};
@@ -303,7 +301,7 @@ sub process_atrace
 
                 $amount =~ s/\.//;
                 my $debit = '-' . $amount;
-                                                 
+
                 $actions_counter++;
 
                 # book for recipient
@@ -313,7 +311,7 @@ sub process_atrace
 
                 $sth_add_xfer->execute($seq, $block_num, $block_time, $trx_id,
                                        $contract, $currency, $to, $amount,
-                                       $to, $contract, $currency, 
+                                       $to, $contract, $currency,
                                        $from, $data->{'memo'});
 
                 # book for sender
@@ -321,13 +319,79 @@ sub process_atrace
                 {
                     $sth_sub_bal->execute($amount, $block_num, $block_time, $trx_id,
                                           $from, $contract, $currency);
-                    
+
                     $sth_add_xfer->execute($seq, $block_num, $block_time, $trx_id,
                                            $contract, $currency, $from, $debit,
-                                           $from, $contract, $currency, 
+                                           $from, $contract, $currency,
                                            $to, $data->{'memo'});
                 }
             }
         }
+        elsif( $aname eq 'retire' )
+        {
+            my $r = check_currency($contract, $data->{'quantity'});
+            if( defined($r) ) {
+                my ($amount, $currency) = @{$r};
+                my $issuer = $known_issuer{$contract}{$currency};
+                if( defined($issuer) )
+                {
+                    my $seq = $receipt->{'global_sequence'};
+                    my $block_num = $tx->{'block_num'};
+                    my $block_time = $tx->{'block_time'};
+                    my $trx_id = $tx->{'trx_id'};
+
+                    $amount =~ s/\.//;
+                    my $debit = '-' . $amount;
+
+                    $actions_counter++;
+
+                    $sth_sub_bal->execute($amount, $block_num, $block_time, $trx_id,
+                                          $issuer, $contract, $currency);
+
+                    $sth_add_xfer->execute($seq, $block_num, $block_time, $trx_id,
+                                           $contract, $currency, $issuer, $debit,
+                                           $issuer, $contract, $currency,
+                                           undef, $data->{'memo'});
+                }
+            }
+        }
     }
+}
+
+
+
+sub check_currency
+{
+    my $contract = shift;
+    my $quantity = shift;
+    my $issuer = shift;
+
+    my ($amount, $currency) = split(/\s+/, $quantity);
+    if( defined($amount) and defined($currency) and
+        $amount =~ /^[0-9.]+$/ and $currency =~ /^[A-Z]{1,7}$/ )
+    {
+        if( not $known_currency{$contract}{$currency} )
+        {
+            my $decimals = 0;
+            my $pos = index($amount, '.');
+            if( $pos > -1 )
+            {
+                $decimals = length($amount) - $pos - 1;
+            }
+            my $multiplier = 10**$decimals;
+
+            $sth_add_currency->execute($contract, $currency, $decimals, $multiplier);
+            $known_currency{$contract}{$currency} = 1;
+        }
+
+        if( defined($issuer) and not defined($known_issuer{$contract}{$currency}) )
+        {
+            $sth_set_currency_issuer->execute($issuer, $contract, $currency);
+            $known_issuer{$contract}{$currency} = $issuer;
+        }
+
+        return [$amount, $currency];
+    }
+
+    return undef;
 }

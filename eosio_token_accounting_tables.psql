@@ -6,7 +6,8 @@ CREATE TABLE %%_CURRENCIES
  contract          VARCHAR(13) NOT NULL,
  currency          VARCHAR(8) NOT NULL,
  decimals          INT UNSIGNED NOT NULL,
- multiplier        BIGINT UNSIGNED NOT NULL
+ multiplier        BIGINT UNSIGNED NOT NULL,
+ issuer            VARCHAR(13) NULL
 ) ENGINE=InnoDB;
 
 CREATE UNIQUE INDEX %%_CURRENCIES_I01 ON %%_CURRENCIES (contract, currency);
