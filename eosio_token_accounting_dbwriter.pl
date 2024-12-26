@@ -204,7 +204,8 @@ sub process_data
                            block_time => $block_time,
                            trx_id => $trace->{'id'} };
 
-                foreach my $atrace (@{$trace->{'action_traces'}})
+                foreach my $atrace (sort {$a->{'receipt'}{'global_sequence'} <=> $b->{'receipt'}{'global_sequence'}}
+                                    @{$trace->{'action_traces'}})
                 {
                     process_atrace($atrace, $tx);
                 }
