@@ -328,7 +328,7 @@ sub process_atrace
                 }
             }
         }
-        elsif( $aname eq 'retire' )
+        elsif( $aname eq 'retire' and defined($data->{'quantity'}) )
         {
             my $r = check_currency($contract, $data->{'quantity'});
             if( defined($r) ) {
