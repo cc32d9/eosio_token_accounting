@@ -278,7 +278,7 @@ sub process_atrace
             return;
         }
 
-        if( $aname eq 'create' )
+        if( $aname eq 'create' and defined($data->{'maximum_supply'}) )
         {
             check_currency($contract, $data->{'maximum_supply'}, $data->{'issuer'});
         }
