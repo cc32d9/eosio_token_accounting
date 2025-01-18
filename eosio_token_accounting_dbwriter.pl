@@ -20,6 +20,7 @@ $Protocol::WebSocket::Frame::MAX_FRAGMENTS_AMOUNT = 102400;
 $| = 1;
 
 my $network;
+my @filter_accounts;
 
 my $port = 8800;
 
@@ -32,6 +33,7 @@ my $endblock = 2**32 - 1;
 
 my $ok = GetOptions
     ('network=s' => \$network,
+     'filter=s'  => \@filter_accounts,
      'port=i'    => \$port,
      'ack=i'     => \$commit_every,
      'endblock=i'  => \$endblock,
@@ -46,6 +48,7 @@ if( not $network or not $ok or scalar(@ARGV) > 0 )
     print STDERR "Usage: $0 --network=X [options...]\n",
         "Options:\n",
         "  --network=X        network name\n",
+        "  --filter=X         account(s) to collect for\n",
         "  --port=N           \[$port\] TCP port to listen to websocket connection\n",
         "  --ack=N            \[$commit_every\] Send acknowledgements every N blocks\n",
         "  --endblock=N       \[$endblock\] Stop before given block\n",
@@ -53,6 +56,22 @@ if( not $network or not $ok or scalar(@ARGV) > 0 )
         "  --dbuser=USER      \[$db_user\]\n",
         "  --dbpw=PASSWORD    \[$db_password\]\n";
     exit 1;
+}
+
+my $do_filter = 0;
+my %filter;
+foreach my $entry (@filter_accounts)
+{
+    foreach my $acc (split(',', $entry)) {
+        $do_filter = 1;
+        $filter{$acc} = 1;
+    }
+}
+
+sub check_filter
+{
+    my $acc = shift;
+    return( not $do_filter or $filter{$acc} );
 }
 
 
@@ -306,17 +325,19 @@ sub process_atrace
                 $actions_counter++;
 
                 # book for recipient
-                $sth_add_bal->execute($to, $contract, $currency,
-                                         $amount, $block_num, $block_time, $trx_id,
-                                         $amount, $block_num, $block_time, $trx_id);
+                if( check_filter($to) ) {
+                    $sth_add_bal->execute($to, $contract, $currency,
+                                          $amount, $block_num, $block_time, $trx_id,
+                                          $amount, $block_num, $block_time, $trx_id);
 
-                $sth_add_xfer->execute($seq, $block_num, $block_time, $trx_id,
-                                       $contract, $currency, $to, $amount,
-                                       $to, $contract, $currency,
-                                       $from, $data->{'memo'});
+                    $sth_add_xfer->execute($seq, $block_num, $block_time, $trx_id,
+                                           $contract, $currency, $to, $amount,
+                                           $to, $contract, $currency,
+                                           $from, $data->{'memo'});
+                }
 
                 # book for sender
-                if( defined($from) )
+                if( defined($from) and check_filter($from) )
                 {
                     $sth_sub_bal->execute($amount, $block_num, $block_time, $trx_id,
                                           $from, $contract, $currency);
@@ -334,7 +355,7 @@ sub process_atrace
             if( defined($r) ) {
                 my ($amount, $currency) = @{$r};
                 my $issuer = $known_issuer{$contract}{$currency};
-                if( defined($issuer) )
+                if( defined($issuer) and check_filter($issuer) )
                 {
                     my $seq = $receipt->{'global_sequence'};
                     my $block_num = $tx->{'block_num'};
