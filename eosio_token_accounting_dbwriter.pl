@@ -135,11 +135,11 @@ my $uncommitted_block = 0;
 my %known_currency;
 my %known_issuer;
 {
-    my $sth = $dbh->prepare ('SELECT contract, currency, issuer FROM ' . $network . '_CURRENCIES');
+    my $sth = $dbh->prepare ('SELECT contract, currency, issuer, decimals FROM ' . $network . '_CURRENCIES');
     $sth->execute();
     while( my $r = $sth->fetchrow_arrayref() )
     {
-        $known_currency{$r->[0]}{$r->[1]} = 1;
+        $known_currency{$r->[0]}{$r->[1]} = $r->[3];
         if( defined($r->[2]) )
         {
             $known_issuer{$r->[0]}{$r->[1]} = $r->[2];
@@ -392,18 +392,24 @@ sub check_currency
     if( defined($amount) and defined($currency) and
         $amount =~ /^[0-9.]+$/ and $currency =~ /^[A-Z]{1,7}$/ )
     {
+        my $decimals = 0;
+        my $pos = index($amount, '.');
+        if( $pos > -1 )
+        {
+            $decimals = length($amount) - $pos - 1;
+        }
+        my $multiplier = 10**$decimals;
+
         if( not $known_currency{$contract}{$currency} )
         {
-            my $decimals = 0;
-            my $pos = index($amount, '.');
-            if( $pos > -1 )
-            {
-                $decimals = length($amount) - $pos - 1;
-            }
-            my $multiplier = 10**$decimals;
-
             $sth_add_currency->execute($contract, $currency, $decimals, $multiplier);
-            $known_currency{$contract}{$currency} = 1;
+            $known_currency{$contract}{$currency} = $decimals;
+        }
+        elsif( $decimals != $known_currency{$contract}{$currency} )
+        {
+            my $sth = $dbh->prepare
+                ('UPDATE ' . $network . '_CURRENCIES SET decimals=?, multiplier=? WHERE contract=? AND currency=?');
+            $sth->execute($decimals, $multiplier, $contract, $currency);
         }
 
         if( defined($issuer) and not defined($known_issuer{$contract}{$currency}) )
